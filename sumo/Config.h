@@ -90,3 +90,9 @@ constexpr uint32_t I2C_CLOCK_HZ         = 400000;
 #define SUMO_DEBUG 0
 // Set to 1 for the brief motor twitch test in setup().
 #define DEBUG_MOTOR_TEST 0
+// Set to 1 to trace VL53L0X bring-up. On Serial, prints which sensor is being
+// brought up at each step (last line printed = the one that hung). On the
+// onboard LED, a stuck sensor flashes N short pulses then a long pause where
+// N = 1..5 for SL, FL, FC, FR, SR — so you can identify the failing sensor
+// even without a serial monitor connected.
+#define VL53L0X_DEBUG 1
