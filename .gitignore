@@ -1,0 +1,31 @@
+# Arduino build artifacts
+build/
+*.hex
+*.elf
+*.bin
+*.eep
+*.lst
+*.map
+*.o
+*.d
+*.a
+
+# Arduino IDE
+.vscode/.arduino-ide/
+.theia/
+*.tmp
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+.DS_Store
+
+# Local secrets / overrides
+*.local
+secrets.h
+
+# Claude Code per-user settings (project-level settings.json is committed)
+.claude/settings.local.json
