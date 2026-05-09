@@ -6,9 +6,6 @@
 namespace {
   VL53L0X tof_sl, tof_fl, tof_fc, tof_fr, tof_sr;
 
-  int line_l_threshold = 600;
-  int line_r_threshold = 600;
-
   void bringUp(VL53L0X& s, uint8_t xshut_pin, uint8_t new_addr) {
     pinMode(xshut_pin, INPUT);   // release reset; sensor wakes via internal pull-up
     delay(10);
@@ -51,21 +48,6 @@ void Sensors::initToF() {
   bringUp(tof_sr, PIN_XSHUT_SR, TOF_ADDR_SR);
 }
 
-void Sensors::calibrateLineBaseline() {
-  uint32_t sum_l = 0, sum_r = 0;
-  uint16_t n = 0;
-  uint32_t end = millis() + LINE_CAL_MS;
-  while ((int32_t)(end - millis()) > 0) {
-    sum_l += analogRead(PIN_LINE_L);
-    sum_r += analogRead(PIN_LINE_R);
-    n++;
-    delay(2);
-  }
-  if (n == 0) n = 1;
-  line_l_threshold = (sum_l / n) + LINE_MARGIN;
-  line_r_threshold = (sum_r / n) + LINE_MARGIN;
-}
-
 ToFReadings Sensors::readToF() {
   ToFReadings r;
   r.sl = readOne(tof_sl);
@@ -80,7 +62,7 @@ LineReadings Sensors::readLine() {
   LineReadings r;
   r.left_raw  = analogRead(PIN_LINE_L);
   r.right_raw = analogRead(PIN_LINE_R);
-  r.left_white  = r.left_raw  > line_l_threshold;
-  r.right_white = r.right_raw > line_r_threshold;
+  r.left_white  = r.left_raw  > LINE_L_THRESHOLD;
+  r.right_white = r.right_raw > LINE_R_THRESHOLD;
   return r;
 }

@@ -50,7 +50,7 @@ ToF sensors get re-assigned I2C addresses 0x30 (SL), 0x31 (FL), 0x32 (FC),
 sumo/
 ├── sumo.ino       Setup, main loop, kill ISR, start sequence.
 ├── Config.h       Pin map, distance/timing/PWM tunables — edit here.
-├── Sensors.h/.cpp VL53L0X bring-up + non-blocking continuous reads, line baseline calibration.
+├── Sensors.h/.cpp VL53L0X bring-up + non-blocking continuous reads, fixed-threshold line read.
 ├── Motors.h/.cpp  A4950 sign-magnitude drive(left,right), brake/coast.
 └── Strategy.h/.cpp Priority state machine (LINE_ESCAPE → ANTI_FLANK → RAM → TRACK → SEARCH).
 ```
@@ -105,8 +105,10 @@ Set `SUMO_DEBUG 1` in [`sumo/Config.h`](sumo/Config.h) for serial telemetry at 1
 | 5    | Strategy dry run                    | Wave hands at sensors on blocks — state transitions print as expected. |
 | 6    | Arena test                          | Push gently toward the white edge with no opponent — LINE_ESCAPE fires before wheels cross. |
 
-In-arena calibration order:
-1. `LINE_MARGIN` — first, so the safety net is solid.
+In-arena tuning order (edit constants in [`sumo/Config.h`](sumo/Config.h)):
+1. `LINE_L_THRESHOLD` / `LINE_R_THRESHOLD` — first, so the safety net is solid.
+   With `SUMO_DEBUG 1`, read raw counts on black and white, then set each
+   threshold roughly midway (or black + ~200).
 2. `ENGAGE_DISTANCE` — when to commit to TRACK.
 3. `RAM_DISTANCE` — when to go full power.
 4. `FLANK_CLOSE_MM`, `FLANK_LEAD_MM`, `FC_BIAS_MM` — only after running a few rounds against a real banner robot.
@@ -137,8 +139,9 @@ In-arena calibration order:
 - D3 is configured as plain `INPUT` — your kill source must drive it actively
   or include an external pull-down. If you'd rather use active-low, change
   the pin mode and the ISR mode (see [`sumo/sumo.ino`](sumo/sumo.ino)).
-- The robot expects to be sitting on **black** at boot (line baseline
-  calibration runs for ~200 ms during setup).
+- The robot does **not** calibrate at boot. Line thresholds are fixed in
+  [`sumo/Config.h`](sumo/Config.h) (`LINE_L_THRESHOLD`, `LINE_R_THRESHOLD`) and
+  must be set per-arena before the match.
 
 ## License
 

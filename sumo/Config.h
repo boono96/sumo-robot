@@ -52,9 +52,11 @@ constexpr uint16_t FLANK_PERSIST_MS  = 60;
 // FL/FR readings are treated as banner noise and we keep driving straight.
 constexpr uint16_t FC_BIAS_MM        = 150;
 
-// ---- Line sensor calibration ----
-constexpr int      LINE_MARGIN     = 200;   // counts above black baseline = WHITE
-constexpr uint16_t LINE_CAL_MS     = 200;   // baseline sample window at boot
+// ---- Line sensor thresholds (pre-calibrated, no boot-time sampling) ----
+// analogRead counts; reading > threshold => WHITE. Tune per-sensor on the
+// real arena surface and edit here. Robot does NOT calibrate at startup.
+constexpr int      LINE_L_THRESHOLD = 600;
+constexpr int      LINE_R_THRESHOLD = 600;
 
 // ---- PWM (0-255) ----
 constexpr uint8_t  RAM_PWM         = 255;
@@ -75,7 +77,7 @@ constexpr uint16_t STALL_RELEASE_MS = 80;
 constexpr uint16_t LINE_REVERSE_MS = 180;
 constexpr uint16_t LINE_TURN_MS    = 250;   // ~120 deg in-place turn
 constexpr uint16_t LINE_180_MS     = 380;
-constexpr uint16_t START_DELAY_MS  = 5000;  // sumo standard 5 s
+constexpr uint16_t START_DELAY_MS  = 10;  // sumo standard 5 s
 constexpr uint16_t BTN_DEBOUNCE_MS = 30;
 constexpr uint16_t ANTI_FLANK_MS   = 300;
 

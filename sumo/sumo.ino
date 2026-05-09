@@ -83,8 +83,8 @@ void setup() {
   Wire.setClock(I2C_CLOCK_HZ);
   Sensors::initToF();
 
-  // Line sensor baseline (robot must be on black at boot).
-  Sensors::calibrateLineBaseline();
+  // Line sensor thresholds are fixed in Config.h (LINE_L_THRESHOLD /
+  // LINE_R_THRESHOLD) — no boot-time calibration.
 
   // Kill interrupt — attach AFTER motor pins are configured so the ISR's
   // digitalWrites are always valid.
