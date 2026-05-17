@@ -6,22 +6,22 @@
 namespace {
   // ---- Per-sensor state ----
   struct ToFEntry {
-    VL53L0X*  s;
-    uint8_t   xshut_pin;
-    uint8_t   addr;
-    uint8_t   id;                          // 1..5, used for stuckBlink
-    const __FlashStringHelper* name;
-    uint8_t   bad_count;                   // consecutive timeouts / 65535 reads
+    VL53L0X*    s;
+    uint8_t     xshut_pin;
+    uint8_t     addr;
+    uint8_t     id;                        // 1..5, used for stuckBlink
+    const char* name;                      // plain RAM string — F() doesn't work in a global array initializer
+    uint8_t     bad_count;                 // consecutive timeouts / 65535 reads
   };
 
   VL53L0X tof_sl, tof_fl, tof_fc, tof_fr, tof_sr;
 
   ToFEntry tofs[5] = {
-    { &tof_sl, PIN_XSHUT_SL, TOF_ADDR_SL, 1, F("SL"), 0 },
-    { &tof_fl, PIN_XSHUT_FL, TOF_ADDR_FL, 2, F("FL"), 0 },
-    { &tof_fc, PIN_XSHUT_FC, TOF_ADDR_FC, 3, F("FC"), 0 },
-    { &tof_fr, PIN_XSHUT_FR, TOF_ADDR_FR, 4, F("FR"), 0 },
-    { &tof_sr, PIN_XSHUT_SR, TOF_ADDR_SR, 5, F("SR"), 0 },
+    { &tof_sl, PIN_XSHUT_SL, TOF_ADDR_SL, 1, "SL", 0 },
+    { &tof_fl, PIN_XSHUT_FL, TOF_ADDR_FL, 2, "FL", 0 },
+    { &tof_fc, PIN_XSHUT_FC, TOF_ADDR_FC, 3, "FC", 0 },
+    { &tof_fr, PIN_XSHUT_FR, TOF_ADDR_FR, 4, "FR", 0 },
+    { &tof_sr, PIN_XSHUT_SR, TOF_ADDR_SR, 5, "SR", 0 },
   };
 
   // After this many consecutive bad reads in a row, force-recover that sensor.
