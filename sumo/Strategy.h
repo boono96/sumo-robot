@@ -4,7 +4,6 @@
 
 enum SumoState : uint8_t {
   STATE_LINE_ESCAPE,
-  STATE_ANTI_FLANK,
   STATE_RAM,
   STATE_TRACK,
   STATE_SEARCH,

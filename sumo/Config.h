@@ -37,19 +37,10 @@ constexpr uint16_t ENGAGE_DISTANCE = 700;
 constexpr uint16_t RAM_DISTANCE    = 200;
 constexpr uint16_t TOF_NO_TARGET   = 800;   // anything beyond = treat as nothing seen
 
-// ---- Banner discrimination ----
-// Some opponents have a wide swinging banner on a stick. Its readings appear on
-// our side beams (and sometimes FL/FR) at moderate range while the body sits
-// straight ahead. To avoid being yanked off the body, side-flank actions
-// require the side reading to be both close AND meaningfully closer than every
-// front reading, AND to persist for FLANK_PERSIST_MS.
-constexpr uint16_t FLANK_CLOSE_MM    = 200;   // side must be at least this close
-constexpr uint16_t FLANK_LEAD_MM     = 150;   // and this much closer than min(FL,FC,FR)
-constexpr uint16_t FLANK_PERSIST_MS  = 60;
-
 // In TRACK, FC is the "body" indicator. FL/FR are only allowed to override FC's
-// straight-ahead command when they read this much closer than FC — otherwise
-// FL/FR readings are treated as banner noise and we keep driving straight.
+// straight-ahead command when they read this much closer than FC — keeps us
+// committed to a straight ram when aligned instead of jittering on small
+// left/right asymmetries.
 constexpr uint16_t FC_BIAS_MM        = 150;
 
 // ---- Line sensor thresholds (pre-calibrated, no boot-time sampling) ----
@@ -79,7 +70,6 @@ constexpr uint16_t LINE_TURN_MS    = 250;   // ~120 deg in-place turn
 constexpr uint16_t LINE_180_MS     = 380;
 constexpr uint16_t START_DELAY_MS  = 10;  // sumo standard 5 s
 constexpr uint16_t BTN_DEBOUNCE_MS = 30;
-constexpr uint16_t ANTI_FLANK_MS   = 300;
 
 // ---- Sensor timing ----
 constexpr uint32_t TOF_TIMING_BUDGET_US = 20000;   // 20 ms = high-speed preset

@@ -2,9 +2,9 @@
 
 Autonomous mini-sumo robot firmware for a 770 mm circular arena. Heavy-class
 build (near the weight limit, modest top speed) — strategy is tuned for
-mass-leveraged head-on rams rather than chase-and-circle play. Includes
-banner discrimination so a swinging banner on the opponent doesn't pull our
-front off the body.
+mass-leveraged head-on rams rather than chase-and-circle play. Opponents are
+expected to carry a static side-extending banner, which the firmware treats
+as part of a wide-front target rather than something to discriminate against.
 
 ## Hardware
 
@@ -52,7 +52,7 @@ sumo/
 ├── Config.h       Pin map, distance/timing/PWM tunables — edit here.
 ├── Sensors.h/.cpp VL53L0X bring-up + non-blocking continuous reads, fixed-threshold line read.
 ├── Motors.h/.cpp  A4950 sign-magnitude drive(left,right), brake/coast.
-└── Strategy.h/.cpp Priority state machine (LINE_ESCAPE → ANTI_FLANK → RAM → TRACK → SEARCH).
+└── Strategy.h/.cpp Priority state machine (LINE_ESCAPE → RAM → TRACK → SEARCH).
 ```
 
 ## Strategy summary
@@ -61,27 +61,27 @@ Each loop iteration evaluates priorities top-down; first match owns the motors:
 
 1. **LINE_ESCAPE** — white detected → reverse + turn away (latched maneuver).
    Both sides white → 180°. Single side → ~120° away from the edge.
-2. **ANTI_FLANK** — banner-aware spin to face a real flank threat. Triggers
-   only when the side reading is close (< 200 mm), meaningfully closer than
-   every front reading (lead > 150 mm), and the predicate has held for at
-   least 60 ms. Filters out swinging banners.
-3. **RAM** — front center < 200 mm → full PWM forward. **Stall/collision
+2. **RAM** — front center < 200 mm → full PWM forward. **Stall/collision
    boost**: once distance stops decreasing while close, latch full PWM
    through the push (sensor saturates on contact); release only on line trip
    or sustained distance recovery.
-4. **TRACK** — FC-biased. If FC has any lock, drive straight unless FL or FR
-   reads ≥ 150 mm closer (real angular offset). FL/FR alone are treated as
-   suspect — possibly banner — and don't trigger ram.
-5. **SEARCH** — spin in place toward `last_seen_side` (default left).
+3. **TRACK** — FC-biased. If FC has any lock, drive straight unless FL or FR
+   reads ≥ 150 mm closer (real angular offset). If FC is blind but FL or FR
+   sees something, curve toward the closer side.
+4. **SEARCH** — spin in place toward `last_seen_side` (default left). Side
+   sensors (SL/SR) are used to bias `last_seen_side` so search heads toward
+   wherever the opponent was last detected.
 
 ### Why these choices for a heavy/slow robot
 
 - Mass advantage wins head-on rams. Stall boost keeps full PWM through
   contact instead of releasing as the ToF reading bounces.
-- Spinning is expensive when you're slow — the FC-bias and persistence-
-  gated anti-flank cut down on wasted turns chasing banner artefacts.
-- FC-only ram trigger prevents charging at a banner edge that briefly enters
-  FL/FR while the actual body is elsewhere.
+- Spinning in place is expensive when you're slow — `FC_BIAS_MM` keeps us
+  committed to a straight ram instead of jittering on small left/right
+  asymmetries while FC has a clean lock.
+- The opponent's side-extending banner is treated as part of the target.
+  No banner-discrimination logic — side hits just bias search direction,
+  and FL/FR hits are valid TRACK signals.
 
 ## Build and flash
 
@@ -94,7 +94,7 @@ Each loop iteration evaluates priorities top-down; first match owns the motors:
 
 ## Bring-up and tuning
 
-Set `SUMO_DEBUG 1` in [`sumo/Config.h`](sumo/Config.h) for serial telemetry at 115200 baud.
+Set `SUMO_DEBUG 1` in [`sumo/Config.h`](sumo/Config.h) for serial telemetry at 9600 baud.
 
 | Step | What                                | Pass criterion                                 |
 | ---- | ----------------------------------- | ---------------------------------------------- |
@@ -111,7 +111,7 @@ In-arena tuning order (edit constants in [`sumo/Config.h`](sumo/Config.h)):
    threshold roughly midway (or black + ~200).
 2. `ENGAGE_DISTANCE` — when to commit to TRACK.
 3. `RAM_DISTANCE` — when to go full power.
-4. `FLANK_CLOSE_MM`, `FLANK_LEAD_MM`, `FC_BIAS_MM` — only after running a few rounds against a real banner robot.
+4. `FC_BIAS_MM` — only after running a few rounds; tune up if we're jittering across a centered target, down if we miss real angular offsets.
 
 ## Tunables (in [`sumo/Config.h`](sumo/Config.h))
 
@@ -119,13 +119,10 @@ In-arena tuning order (edit constants in [`sumo/Config.h`](sumo/Config.h)):
 | ------------------- | ------- | -------------------------------------------------- |
 | `ENGAGE_DISTANCE`   | 700 mm  | Inside this, TRACK takes over.                     |
 | `RAM_DISTANCE`      | 200 mm  | Inside this on FC, RAM at full PWM.                |
-| `FLANK_CLOSE_MM`    | 200 mm  | Min side closeness to consider a flank threat.     |
-| `FLANK_LEAD_MM`     | 150 mm  | Side must be this much closer than every front.    |
-| `FLANK_PERSIST_MS`  | 60 ms   | Predicate must hold this long before spin.         |
 | `FC_BIAS_MM`        | 150 mm  | FL/FR must beat FC by this margin to override.     |
 | `RAM_PWM`           | 255     | Full power on ram and stall-latch push.            |
 | `FORWARD_PWM`       | 200     | Tracking forward speed.                            |
-| `TURN_PWM`          | 200     | In-place spin speed for line escape and anti-flank.|
+| `TURN_PWM`          | 200     | In-place spin speed for line escape.               |
 | `SEARCH_PWM`        | 160     | In-place spin speed during search.                 |
 | `START_DELAY_MS`    | 5000    | Sumo-standard 5 s grace after start signal.        |
 | `LINE_REVERSE_MS`   | 180     | Reverse duration after a line trip.                |

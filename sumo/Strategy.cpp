@@ -12,23 +12,11 @@ namespace {
   uint32_t   line_phase_end = 0;
   int8_t     line_turn_dir = 0;   // +1 right (CW), -1 left (CCW)
 
-  // Anti-flank (latched once committed)
-  uint32_t   flank_end = 0;
-  int8_t     flank_dir = 0;       // +1 right, -1 left
-  // Pre-commit persistence: when did each side first satisfy the flank predicate?
-  uint32_t   flank_l_since = 0;
-  uint32_t   flank_r_since = 0;
-
   // Ram stall / collision boost
   bool       pushing = false;
   uint16_t   stall_ref_mm = 0;
   uint32_t   stall_ref_time = 0;
   uint32_t   release_far_since = 0;
-
-  inline uint16_t minOf3(uint16_t a, uint16_t b, uint16_t c) {
-    uint16_t m = a < b ? a : b;
-    return m < c ? m : c;
-  }
 
   // In-place spin: +1 = clockwise/right, -1 = counter-clockwise/left.
   void spin(int8_t dir, uint8_t pwm) {
@@ -69,7 +57,6 @@ namespace {
       line_phase_end = now + LINE_REVERSE_MS;
       line_turn_dir = 0;
       pushing = false;
-      flank_end = 0;
       Motors::drive(-RAM_PWM, -RAM_PWM);
       return true;
     }
@@ -78,7 +65,6 @@ namespace {
       line_phase_end = now + LINE_REVERSE_MS;
       line_turn_dir = +1;     // turn right (away from left edge)
       pushing = false;
-      flank_end = 0;
       Motors::drive(-RAM_PWM, -RAM_PWM);
       return true;
     }
@@ -87,65 +73,7 @@ namespace {
       line_phase_end = now + LINE_REVERSE_MS;
       line_turn_dir = -1;     // turn left (away from right edge)
       pushing = false;
-      flank_end = 0;
       Motors::drive(-RAM_PWM, -RAM_PWM);
-      return true;
-    }
-    return false;
-  }
-
-  // Predicate: side reading represents a real flank threat (not banner sweep).
-  // Requires the side to be close AND meaningfully closer than every front
-  // reading. A banner whose body sits ahead will leave at least one front
-  // sensor seeing the body at similar-or-closer range than the side.
-  inline bool isRealFlank(uint16_t side, const ToFReadings& tof) {
-    if (side >= FLANK_CLOSE_MM) return false;
-    uint16_t front_min = minOf3(tof.fl, tof.fc, tof.fr);
-    return (uint32_t)side + FLANK_LEAD_MM < (uint32_t)front_min;
-  }
-
-  // Returns true if anti-flank maneuver is owning the motors this tick.
-  bool handleAntiFlank(const ToFReadings& tof) {
-    uint32_t now = millis();
-
-    // Active latch — keep spinning until front center sees target or timeout.
-    if (flank_end != 0 && (int32_t)(flank_end - now) > 0) {
-      if (tof.fc < ENGAGE_DISTANCE) {
-        flank_end = 0;
-        return false;
-      }
-      spin(flank_dir, TURN_PWM);
-      return true;
-    }
-    flank_end = 0;
-
-    // Update per-side "since" timestamps for persistence gating.
-    bool l_real = isRealFlank(tof.sl, tof);
-    bool r_real = isRealFlank(tof.sr, tof);
-    if (l_real) { if (flank_l_since == 0) flank_l_since = now; }
-    else        { flank_l_since = 0; }
-    if (r_real) { if (flank_r_since == 0) flank_r_since = now; }
-    else        { flank_r_since = 0; }
-
-    // Trigger only after the predicate has held for FLANK_PERSIST_MS — this
-    // filters out a swinging banner that briefly enters the side beam.
-    bool l_trig = flank_l_since != 0 && (now - flank_l_since) >= FLANK_PERSIST_MS;
-    bool r_trig = flank_r_since != 0 && (now - flank_r_since) >= FLANK_PERSIST_MS;
-
-    if (l_trig && (!r_trig || tof.sl <= tof.sr)) {
-      flank_dir = -1;
-      flank_end = now + ANTI_FLANK_MS;
-      pushing = false;
-      flank_l_since = 0;
-      spin(flank_dir, TURN_PWM);
-      return true;
-    }
-    if (r_trig) {
-      flank_dir = +1;
-      flank_end = now + ANTI_FLANK_MS;
-      pushing = false;
-      flank_r_since = 0;
-      spin(flank_dir, TURN_PWM);
       return true;
     }
     return false;
@@ -197,10 +125,6 @@ void Strategy::reset() {
   line_phase = LP_NONE;
   line_phase_end = 0;
   line_turn_dir = 0;
-  flank_end = 0;
-  flank_dir = 0;
-  flank_l_since = 0;
-  flank_r_since = 0;
   pushing = false;
   stall_ref_mm = 0;
   stall_ref_time = 0;
@@ -211,10 +135,7 @@ SumoState Strategy::step(const ToFReadings& tof, const LineReadings& line) {
   // 1. Line escape preempts everything.
   if (handleLineEscape(line)) return STATE_LINE_ESCAPE;
 
-  // 2. Anti-flank preempts attack.
-  if (handleAntiFlank(tof)) return STATE_ANTI_FLANK;
-
-  // 3. Ram (with stall latch).
+  // 2. Ram (with stall latch).
   bool latched = updateStallLatch(tof.fc);
   if (latched || tof.fc < RAM_DISTANCE) {
     Motors::drive(+RAM_PWM, +RAM_PWM);
@@ -222,9 +143,9 @@ SumoState Strategy::step(const ToFReadings& tof, const LineReadings& line) {
     return STATE_RAM;
   }
 
-  // 4. Track — FC is the body indicator. Commit forward when FC has any lock,
-  //    only curve hard when FC sees nothing. FL/FR alone are treated as
-  //    suspect (could be banner sweep).
+  // 3. Track — FC is the alignment indicator. Commit forward when FC has any
+  //    lock; only curve hard when FC sees nothing. FC_BIAS_MM keeps us
+  //    committed to a straight ram on small left/right asymmetries.
   if (tof.fc < ENGAGE_DISTANCE) {
     // FC has a target — drive straight unless FL or FR reads MUCH closer
     // (real angular offset), in which case nudge the bearing slightly.
@@ -254,17 +175,15 @@ SumoState Strategy::step(const ToFReadings& tof, const LineReadings& line) {
     return STATE_TRACK;
   }
 
-  // 5. Side sensor seeing something inside ENGAGE — only used to bias the
-  //    next search direction, never to act. Banner readings end up here too,
-  //    but a one-frame bias just sets which way we'll spin in SEARCH and is
-  //    harmless if wrong.
+  // 4. Side sensor seeing something inside ENGAGE — bias the next search
+  //    direction so we spin toward whichever side last saw the opponent.
   if (tof.sl < ENGAGE_DISTANCE && tof.sl <= tof.sr) {
     last_seen_side = -1;
   } else if (tof.sr < ENGAGE_DISTANCE) {
     last_seen_side = +1;
   }
 
-  // 6. Search — spin toward last seen side (default left if center/unknown).
+  // 5. Search — spin toward last seen side (default left if center/unknown).
   int8_t dir = (last_seen_side > 0) ? +1 : -1;
   spin(dir, SEARCH_PWM);
   return STATE_SEARCH;

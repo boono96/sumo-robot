@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Arduino Nano firmware for an autonomous mini-sumo robot. Single sketch under `sumo/` — no host-side code, no test harness, no build scripts. Target: ATmega328P, 5 V. The robot is heavy/slow and the strategy is explicitly tuned for that profile (mass-leveraged head-on rams, banner-tolerant tracking).
+Arduino Nano firmware for an autonomous mini-sumo robot. Single sketch under `sumo/` — no host-side code, no test harness, no build scripts. Target: ATmega328P, 5 V. The robot is heavy/slow and the strategy is explicitly tuned for that profile (mass-leveraged head-on rams). Opponents are assumed to carry a static side-extending banner, treated as part of a wide-front target — no banner-discrimination logic.
 
 ## Build / flash
 
@@ -28,17 +28,16 @@ The sketch is split into four translation units in `sumo/`. Each `.cpp` owns its
 - [Strategy.{h,cpp}](sumo/Strategy.cpp) — priority-ordered state machine, evaluated top-down each `loop()`; first match owns the motors and returns:
 
   1. `LINE_ESCAPE` (latched REVERSE → TURN, preempts everything; both-sides-white triggers a 180°, single-side triggers ~120° away)
-  2. `ANTI_FLANK` (banner-aware spin; gated by `FLANK_CLOSE_MM` + `FLANK_LEAD_MM` + `FLANK_PERSIST_MS`)
-  3. `RAM` (FC < `RAM_DISTANCE`, with a stall/collision latch that holds full PWM through contact even when the ToF reading bounces — release only on sustained distance recovery or line trip)
-  4. `TRACK` (FC-biased: FL/FR must beat FC by `FC_BIAS_MM` to override straight-ahead drive — treats lone FL/FR hits as suspected banner sweep)
-  5. `SEARCH` (in-place spin toward `last_seen_side`, default left)
+  2. `RAM` (FC < `RAM_DISTANCE`, with a stall/collision latch that holds full PWM through contact even when the ToF reading bounces — release only on sustained distance recovery or line trip)
+  3. `TRACK` (FC-biased: FL/FR must beat FC by `FC_BIAS_MM` to override straight-ahead drive; FC-blind fallback curves toward whichever of FL/FR reads closer)
+  4. `SEARCH` (in-place spin toward `last_seen_side`, default left; SL/SR readings inside `ENGAGE_DISTANCE` bias `last_seen_side` so search heads toward the last detection)
 
   Each latched behavior keeps its end-time and direction in file-static state and clears it on completion. Adding a new state means: add an enum, slot it into `Strategy::step()` at the right priority, and reset any new state in `Strategy::reset()`.
 
 ### Cross-cutting invariants
 
 - **Tuning lives in [Config.h](sumo/Config.h).** Don't introduce magic numbers in `.cpp` files — add a `constexpr` to `Config.h` and reference it.
-- **Banner discrimination is the whole reason for the FC-bias / flank-persistence design.** A swinging opponent banner produces brief side-beam and FL/FR hits while the actual body is straight ahead. Don't "simplify" the predicate without preserving this — the README's strategy section documents the rationale.
+- **Opponent banner is treated as wide-front target, not noise.** Side and FL/FR hits are valid signals; do not reintroduce banner-discrimination or anti-flank logic without checking with the user first — it was explicitly removed.
 - **Kill safety:** any new motor writes must remain reachable by the ISR's all-pins-LOW behavior, i.e. don't add motor outputs on pins outside the four `PIN_*_IN{1,2}` macros without also extending `killISR()` and `Motors::coast()`.
 - **Pin reassignments:** if a motor wire is flipped, change the `PIN_*_IN1`/`PIN_*_IN2` macros in `Config.h` rather than rewiring (per the bring-up notes).
 
