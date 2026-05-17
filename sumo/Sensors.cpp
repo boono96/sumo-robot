@@ -63,7 +63,7 @@ void Sensors::initToF() {
 #if VL53L0X_DEBUG
   // Make sure Serial is up so trace lines aren't lost. Safe to call even if
   // SUMO_DEBUG already opened it.
-  if (!Serial) Serial.begin(115200);
+  if (!Serial) Serial.begin(9600);
   Serial.println(F("[ToF] initToF() begin"));
 #endif
 
@@ -100,7 +100,7 @@ LineReadings Sensors::readLine() {
   LineReadings r;
   r.left_raw  = analogRead(PIN_LINE_L);
   r.right_raw = analogRead(PIN_LINE_R);
-  r.left_white  = r.left_raw  > LINE_L_THRESHOLD;
-  r.right_white = r.right_raw > LINE_R_THRESHOLD;
+  r.left_white  = r.left_raw  < LINE_L_THRESHOLD;
+  r.right_white = r.right_raw < LINE_R_THRESHOLD;
   return r;
 }

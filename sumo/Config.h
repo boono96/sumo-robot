@@ -53,7 +53,7 @@ constexpr uint16_t FLANK_PERSIST_MS  = 60;
 constexpr uint16_t FC_BIAS_MM        = 150;
 
 // ---- Line sensor thresholds (pre-calibrated, no boot-time sampling) ----
-// analogRead counts; reading > threshold => WHITE. Tune per-sensor on the
+// analogRead counts; reading < threshold => WHITE. Tune per-sensor on the
 // real arena surface and edit here. Robot does NOT calibrate at startup.
 constexpr int      LINE_L_THRESHOLD = 600;
 constexpr int      LINE_R_THRESHOLD = 600;
@@ -86,7 +86,7 @@ constexpr uint32_t TOF_TIMING_BUDGET_US = 20000;   // 20 ms = high-speed preset
 constexpr uint32_t I2C_CLOCK_HZ         = 400000;
 
 // ---- Debug ----
-// Set to 1 to print state + distances to Serial @ 115200.
+// Set to 1 to print state + distances to Serial @ 9600.
 #define SUMO_DEBUG 0
 // Set to 1 for the brief motor twitch test in setup().
 #define DEBUG_MOTOR_TEST 0

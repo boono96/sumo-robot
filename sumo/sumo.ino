@@ -64,7 +64,7 @@ static void countdownThenRun() {
 // ---- Setup -----------------------------------------------------------------
 void setup() {
 #if SUMO_DEBUG
-  Serial.begin(115200);
+  Serial.begin(9600);
 #endif
 
   // Inputs.
