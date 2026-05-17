@@ -26,9 +26,9 @@ void killISR() {
 // ---- Helpers ---------------------------------------------------------------
 static bool buttonPressed() {
   // Active-low button on A1 with INPUT_PULLUP. Debounce.
-  if (digitalRead(PIN_START_BTN) != LOW) return false;
+  if (digitalRead(PIN_START_BTN) != HIGH) return false;
   delay(BTN_DEBOUNCE_MS);
-  return digitalRead(PIN_START_BTN) == LOW;
+  return digitalRead(PIN_START_BTN) == HIGH;
 }
 
 static bool extStartHigh() {
