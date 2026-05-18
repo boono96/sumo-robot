@@ -25,9 +25,13 @@ namespace {
   };
 
   // After this many consecutive bad reads in a row, force-recover that sensor.
-  // 5 * ~50 ms timeout = ~250 ms worst-case latency before recovery kicks in,
-  // which is short enough not to wreck strategy timing.
-  constexpr uint8_t TOF_BAD_THRESHOLD = 5;
+  // 3 * ~25 ms timeout = ~75 ms worst-case latency before recovery kicks in.
+  constexpr uint8_t TOF_BAD_THRESHOLD = 3;
+
+  // Wire-level timeout for the Pololu library. At 20 ms timing budget, healthy
+  // sensors respond well within 25 ms; anything beyond is a real lockup, no
+  // point waiting longer.
+  constexpr uint16_t TOF_WIRE_TIMEOUT_MS = 25;
 
   // Stuck-sensor indicator at boot: flash `id` short pulses, long pause, repeat.
   // Only used during initToF() — not during runtime recovery.
@@ -42,10 +46,52 @@ namespace {
     }
   }
 
-  // Configure one sensor: release XSHUT, init at default 0x29, move to its
-  // reassigned address, start continuous ranging. Returns true on success.
+  // ---- I2C bus recovery -----------------------------------------------------
+  // When motor noise glitches a sensor mid-transaction it can leave SDA held
+  // LOW, and the AVR TWI peripheral can lock up too. Wire.begin() alone
+  // doesn't fix this — we have to bit-bang SCL to clock the slave out of its
+  // pending ACK, generate a manual STOP, then re-init Wire.
+  // On Arduino Nano: SDA = A4, SCL = A5.
+  void i2cBusRecover() {
+#if VL53L0X_DEBUG
+    Serial.println(F("[ToF] i2c bus recover"));
+#endif
+    Wire.end();
+
+    pinMode(SDA, INPUT_PULLUP);
+    pinMode(SCL, INPUT_PULLUP);
+    delayMicroseconds(20);
+
+    // Clock out a stuck slave. 9 pulses covers any byte-in-flight + ACK.
+    // We try up to 18 in case the slave is mid-multi-byte.
+    for (uint8_t i = 0; i < 18 && digitalRead(SDA) == LOW; i++) {
+      pinMode(SCL, OUTPUT);
+      digitalWrite(SCL, LOW);
+      delayMicroseconds(5);
+      pinMode(SCL, INPUT_PULLUP);
+      delayMicroseconds(5);
+    }
+
+    // Manual STOP: SDA goes LOW->HIGH while SCL is HIGH.
+    pinMode(SDA, OUTPUT);
+    digitalWrite(SDA, LOW);
+    delayMicroseconds(5);
+    pinMode(SCL, OUTPUT);
+    digitalWrite(SCL, HIGH);
+    delayMicroseconds(5);
+    pinMode(SDA, INPUT_PULLUP);
+    delayMicroseconds(5);
+    pinMode(SCL, INPUT_PULLUP);
+    delayMicroseconds(5);
+
+    Wire.begin();
+    Wire.setClock(I2C_CLOCK_HZ);
+  }
+
+  // Configure one sensor: init at default 0x29, move to its reassigned
+  // address, start continuous ranging. Returns true on success.
   bool configure(ToFEntry& e) {
-    e.s->setTimeout(50);
+    e.s->setTimeout(TOF_WIRE_TIMEOUT_MS);
     if (!e.s->init()) return false;
     e.s->setAddress(e.addr);
     e.s->setMeasurementTimingBudget(TOF_TIMING_BUDGET_US);
@@ -77,20 +123,42 @@ namespace {
 #endif
   }
 
-  // Runtime recovery for one sensor: full XSHUT-cycle reset, re-init, restore
-  // its custom address, restart continuous mode. Other sensors are unaffected
-  // because they're already at addresses 0x30-0x34 — only this one comes back
-  // up at 0x29 and is immediately moved to its assigned address.
-  // Best-effort: if init() fails (e.g. bus still glitched), just return and we
-  // will retry on the next threshold hit. Does NOT call stuckBlink — we never
-  // want to deadlock mid-match.
-  void recoverSensor(ToFEntry& e) {
+  // Full subsystem reset: hold all 5 in XSHUT, recover the I2C bus, then
+  // re-bring-up all sensors from scratch. Used when single-sensor recovery
+  // can't talk over the bus.
+  void fullToFReset() {
+#if VL53L0X_DEBUG
+    Serial.println(F("[ToF] full subsystem reset"));
+#endif
+    for (uint8_t i = 0; i < 5; i++) {
+      pinMode(tofs[i].xshut_pin, OUTPUT);
+      digitalWrite(tofs[i].xshut_pin, LOW);
+    }
+    delay(10);
+
+    i2cBusRecover();
+
+    for (uint8_t i = 0; i < 5; i++) {
+      pinMode(tofs[i].xshut_pin, INPUT);
+      delay(10);
+      if (configure(tofs[i])) {
+        tofs[i].bad_count = 0;
+      }
+      // If one sensor fails to come up, keep going — others may still work.
+    }
+  }
+
+  // Runtime recovery for one sensor: XSHUT-cycle, re-init, restore its custom
+  // address, restart continuous mode. Returns true on success. Other sensors
+  // are unaffected because they're already at addresses 0x30-0x34.
+  // Best-effort: never calls stuckBlink — we never want to deadlock mid-match.
+  bool recoverSensor(ToFEntry& e) {
 #if VL53L0X_DEBUG
     Serial.print(F("[ToF] recover ")); Serial.println(e.name);
 #endif
     pinMode(e.xshut_pin, OUTPUT);
     digitalWrite(e.xshut_pin, LOW);
-    delay(5);
+    delay(10);
     pinMode(e.xshut_pin, INPUT);   // release, internal pull-up wakes sensor
     delay(10);
 
@@ -98,11 +166,12 @@ namespace {
 #if VL53L0X_DEBUG
       Serial.print(F("[ToF] recover FAILED ")); Serial.println(e.name);
 #endif
-      return;
+      return false;
     }
 #if VL53L0X_DEBUG
     Serial.print(F("[ToF] recover OK ")); Serial.println(e.name);
 #endif
+    return true;
   }
 
   uint16_t readOne(ToFEntry& e) {
@@ -112,7 +181,11 @@ namespace {
     bool bad = e.s->timeoutOccurred() || mm == 65535;
     if (bad) {
       if (++e.bad_count >= TOF_BAD_THRESHOLD) {
-        recoverSensor(e);
+        if (!recoverSensor(e)) {
+          // Single-sensor recovery couldn't talk over I2C — bus is probably
+          // hung. Escalate to bus recovery + full subsystem re-bring-up.
+          fullToFReset();
+        }
         e.bad_count = 0;
       }
       return TOF_NO_TARGET;
